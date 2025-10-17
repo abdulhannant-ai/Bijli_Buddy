@@ -62,7 +62,7 @@ export default function PredictScreen() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.2 }}
-            className="w-48 sm:w-56 md:w-72 lg:w-80 h-auto object-contain mx-auto mt-5 md:mt-0"
+            className="w-48 sm:w-65 md:w-72 lg:w-80 h-auto object-contain mx-auto mt-5 md:mt-0"
           />
         </div>
       </div>
