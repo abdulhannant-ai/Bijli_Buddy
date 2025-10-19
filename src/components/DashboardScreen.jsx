@@ -9,7 +9,7 @@ import {
   sparklesOutline,
 } from "ionicons/icons";
 import { auth, db } from "../config/firebase.js";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import quicktip from "../assets/quick-tip.png";
 
 export default function Dashboard() {
@@ -22,6 +22,7 @@ export default function Dashboard() {
 
   // ✅ Dynamic meter reading
   const [meterReading, setMeterReading] = useState("");
+  const [currentReading, setCurrentReading] = useState(0); // Saved current reading
   const [monthlyUnits, setMonthlyUnits] = useState(0);
   const [predictedBill, setPredictedBill] = useState(0);
   const [nextSlabUnits, setNextSlabUnits] = useState(0);
@@ -42,13 +43,13 @@ export default function Dashboard() {
       "Clean fan blades monthly — dust buildup increases power draw.",
     ],
     [
-      "Keep AC temperature at 26°C — it’s the most efficient cooling level for Pakistan’s climate.",
+      "Keep AC temperature at 26°C — it's the most efficient cooling level for Pakistan's climate.",
       "Prefer inverter ACs — they consume 40–50% less power than normal ACs.",
       "Regularly clean AC filters to maintain cooling efficiency.",
       "Use ceiling fans along with AC to circulate air evenly and reduce cooling time.",
     ],
     [
-      "Don’t overload the refrigerator — proper air circulation improves cooling efficiency.",
+      "Don't overload the refrigerator — proper air circulation improves cooling efficiency.",
       "Buy energy-efficient fridges rated below 250 watts or with inverter compressors.",
       "Avoid keeping the fridge near sunlight or walls — it forces the compressor to run longer.",
       "Defrost regularly — ice buildup increases power usage.",
@@ -110,7 +111,16 @@ export default function Dashboard() {
         const userSnap = await getDoc(userRef);
 
         if (userSnap.exists()) {
-          setUserData(userSnap.data());
+          const data = userSnap.data();
+          setUserData(data);
+          
+          // Load saved meter data if it exists
+          if (data.meterData) {
+            setCurrentReading(data.meterData.currentReading || 0);
+            setMonthlyUnits(data.meterData.monthlyUnits || 0);
+            setPredictedBill(data.meterData.predictedBill || 0);
+            setNextSlabUnits(data.meterData.nextSlabUnits || 0);
+          }
         } else {
           console.warn("⚠ No user document found in Firestore");
         }
@@ -122,31 +132,18 @@ export default function Dashboard() {
     };
 
     fetchUserData();
-
-    // ✅ Load saved data from localStorage on mount
-    const savedData = JSON.parse(localStorage.getItem("dashboardData"));
-    if (savedData) {
-      setMonthlyUnits(savedData.monthlyUnits || 0);
-      setPredictedBill(savedData.predictedBill || 0);
-      setNextSlabUnits(savedData.nextSlabUnits || 0);
-    }
   }, []);
 
-  // ✅ Save data to localStorage whenever values change
-  useEffect(() => {
-    localStorage.setItem(
-      "dashboardData",
-      JSON.stringify({ monthlyUnits, predictedBill, nextSlabUnits })
-    );
-  }, [monthlyUnits, predictedBill, nextSlabUnits]);
-
   // ✅ Handle Meter Reading Input
-  const handleMeterSubmit = () => {
+  const handleMeterSubmit = async () => {
     const reading = parseFloat(meterReading);
     if (isNaN(reading) || reading <= 0) {
       alert("⚠ Please enter a valid meter reading.");
       return;
     }
+
+    // Save the current reading permanently
+    setCurrentReading(reading);
 
     // Calculate predicted bill (Rs.34 per unit)
     const bill = reading * 34;
@@ -162,6 +159,25 @@ export default function Dashboard() {
     setPredictedBill(bill);
     setNextSlabUnits(nextLimit);
     setMeterReading("");
+
+    // Save to Firebase
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const userRef = doc(db, "users", currentUser.uid);
+        await setDoc(userRef, {
+          meterData: {
+            currentReading: reading,
+            monthlyUnits: reading,
+            predictedBill: bill,
+            nextSlabUnits: nextLimit,
+            lastUpdated: new Date().toISOString()
+          }
+        }, { merge: true });
+      }
+    } catch (error) {
+      console.error("Error saving meter data:", error);
+    }
   };
 
   if (loadingUser) {
@@ -202,16 +218,23 @@ export default function Dashboard() {
 
           {/* 🔹 Meter Reading Input */}
           <div className="bg-white rounded-xl p-4 shadow-md mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
-            <input
-              type="number"
-              value={meterReading}
-              onChange={(e) => setMeterReading(e.target.value)}
-              placeholder="Enter your current meter reading (units)"
-              className="border border-gray-300 rounded-lg px-3 py-2 w-full sm:w-auto flex-grow focus:ring-2 focus:ring-teal-500 outline-none"
-            />
+            <div className="flex-grow">
+              <input
+                type="number"
+                value={meterReading}
+                onChange={(e) => setMeterReading(e.target.value)}
+                placeholder="Enter your current meter reading (units)"
+                className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:ring-2 focus:ring-teal-500 outline-none"
+              />
+              {currentReading > 0 && (
+                <p className="text-sm text-gray-600 mt-2">
+                  Current saved reading: <span className="font-semibold text-teal-700">{currentReading} units</span>
+                </p>
+              )}
+            </div>
             <button
               onClick={handleMeterSubmit}
-              className="bg-[#0F766E] text-white px-4 py-2 rounded-lg hover:bg-[#115E59] transition"
+              className="bg-[#0F766E] text-white px-4 py-2 rounded-lg hover:bg-[#115E59] transition whitespace-nowrap"
             >
               Update Reading
             </button>
